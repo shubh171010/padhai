@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>JEE Study Command Center ⚡</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100vh;background:#050a14}
+body{font-family:'Outfit',sans-serif;color:#e2e8f0}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(56,189,248,0.3);border-radius:3px}
+input,select,textarea{font-family:'Outfit',sans-serif}
+.glass{background:rgba(255,255,255,0.04);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.08);border-radius:20px}
+.glass-bright{background:rgba(56,189,248,0.08);backdrop-filter:blur(20px);border:1px solid rgba(56,189,248,0.2);border-radius:20px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 22px;border-radius:12px;font-family:'Outfit',sans-serif;font-weight:600;font-size:14px;cursor:pointer;border:none;transition:all 0.2s}
+.btn-primary{background:linear-gradient(135deg,#38bdf8,#818cf8);color:#fff}
+.btn-primary:hover{opacity:0.9;transform:translateY(-1px);box-shadow:0 8px 30px rgba(56,189,248,0.4)}
+.btn-ghost{background:rgba(255,255,255,0.06);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1)}
+.btn-ghost:hover{background:rgba(255,255,255,0.1)}
+.btn-danger{background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.3)}
+.input{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:10px 14px;color:#e2e8f0;font-size:14px;width:100%;outline:none;transition:border 0.2s}
+.input:focus{border-color:rgba(56,189,248,0.5)}
+.tab-btn{padding:10px 18px;border-radius:12px;font-weight:600;font-size:13px;cursor:pointer;border:none;background:transparent;color:rgba(255,255,255,0.4);transition:all 0.2s;white-space:nowrap;font-family:'Outfit',sans-serif}
+.tab-btn.active{background:rgba(56,189,248,0.15);color:#38bdf8}
+.tab-btn:hover:not(.active){color:rgba(255,255,255,0.7);background:rgba(255,255,255,0.05)}
+@keyframes fadeIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+@keyframes levelup{0%{transform:scale(0.5);opacity:0}60%{transform:scale(1.2)}100%{transform:scale(1);opacity:1}}
+@keyframes toastIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:none}}
+.animate-in{animation:fadeIn 0.5s ease both}
+.pulse{animation:pulse 2s infinite}
+.level-up{animation:levelup 0.6s cubic-bezier(.4,2,.6,1) both}
+.timer-num{font-family:'JetBrains Mono',monospace;font-weight:600}
+.toast-anim{animation:toastIn 0.3s ease}
+@media(max-width:768px){
+  .sidebar{display:none!important}
+  .main-content{padding-bottom:80px!important}
+  .mobile-nav{display:flex!important}
+  .hide-sm{display:none!important}
+}
+@media(min-width:769px){
+  .mobile-nav{display:none!important}
+  .sidebar{display:flex!important}
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const STORAGE_KEY = "jee_cmd_v3";
+function loadData() { try { const r=localStorage.getItem(STORAGE_KEY); if(r) return JSON.parse(r); } catch{} return null; }
+function saveData(d) { try { localStorage.setItem(STORAGE_KEY,JSON.stringify(d)); } catch{} }
+
+function createInitialState() {
+  return {
+    sessions:[],tasks:[],achievements:[],xp:0,streak:0,lastStudyDate:null,badges:[],
+    subjectStats:{Physics:{total:0,sessions:[]},Chemistry:{total:0,sessions:[]},Mathematics:{total:0,sessions:[]},Other:{total:0,sessions:[]}},
+    dailyReports:{},settings:{dailyTarget:300,pomodoroWork:25,pomodoroBreak:5},
+  };
+}
+
+const SUBJECTS=["Physics","Chemistry","Mathematics","Other"];
+const SCOL={Physics:"#38bdf8",Chemistry:"#a78bfa",Mathematics:"#34d399",Other:"#fb923c"};
+const LEVELS=[
+  {name:"Beginner",min:0,icon:"🌱"},
+  {name:"Consistent Learner",min:500,icon:"📚"},
+  {name:"Dedicated Student",min:1500,icon:"⚡"},
+  {name:"Top Performer",min:3000,icon:"🔥"},
+  {name:"JEE Warrior",min:6000,icon:"⚔️"},
+  {name:"JEE Master",min:10000,icon:"👑"},
+];
+const ACH_DEF=[
+  {id:"first_session",title:"First Step",desc:"Complete your first study session",icon:"🎯",cond:(s)=>s.sessions.length>=1},
+  {id:"five_hour_day",title:"5-Hour Day",desc:"Study 5 hours in a single day",icon:"🏆",cond:(s)=>Object.values(s.dailyReports).some(r=>r.minutes>=300)},
+  {id:"streak_7",title:"Week Warrior",desc:"Maintain a 7-day streak",icon:"🔥",cond:(s)=>s.streak>=7},
+  {id:"streak_30",title:"Monthly Master",desc:"Maintain a 30-day streak",icon:"💎",cond:(s)=>s.streak>=30},
+  {id:"hours_50",title:"50 Hours",desc:"Study for 50+ hours total",icon:"⭐",cond:(s)=>totalMins(s)>=3000},
+  {id:"hours_100",title:"Century",desc:"Study for 100+ hours total",icon:"🌟",cond:(s)=>totalMins(s)>=6000},
+  {id:"hours_500",title:"Legend",desc:"Study for 500+ hours total",icon:"🔱",cond:(s)=>totalMins(s)>=30000},
+  {id:"tasks_10",title:"Task Master",desc:"Complete 10 tasks",icon:"✅",cond:(s)=>s.tasks.filter(t=>t.done).length>=10},
+];
+const QUOTES=[
+  "Success is the sum of small efforts repeated day in and day out.",
+  "The secret of getting ahead is getting started.",
+  "Don't watch the clock; do what it does. Keep going.",
+  "JEE is not a destination, it's a journey of self-discovery.",
+  "Hard work beats talent when talent doesn't work hard.",
+  "Discipline is choosing between what you want now and what you want most.",
+  "Every hour you study brings you one step closer to your dream.",
+  "It always seems impossible until it's done.",
+];
+
+function totalMins(st){return st.sessions.reduce((a,s)=>a+(s.duration||0),0);}
+function todayKey(){return new Date().toISOString().slice(0,10);}
+function fmtTime(secs){const h=Math.floor(secs/3600),m=Math.floor((secs%3600)/60),s=secs%60;return h>0?`${h}h ${String(m).padStart(2,"0")}m`:`${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;}
+function fmtMin(mins){if(!mins||mins===0)return"0m";const h=Math.floor(mins/60),m=mins%60;return h>0?`${h}h${m>0?" "+m+"m":""}`:`${m}m`;}
+function getLvl(xp){let l=LEVELS[0];for(const x of LEVELS)if(xp>=x.min)l=x;const idx=LEVELS.indexOf(l),next=LEVELS[idx+1],prog=next?((xp-l.min)/(next.min-l.min))*100:100;return{...l,idx,next,prog};}
+
+// ── Components ──
+function CircularProgress({value,max,size=180,stroke=14,color="#38bdf8",bg="rgba(255,255,255,0.06)",children}){
+  const r=(size-stroke)/2,circ=2*Math.PI*r,pct=Math.min(value/Math.max(max,1),1),offset=circ*(1-pct);
+  return(
+    <div style={{position:"relative",width:size,height:size,flexShrink:0}}>
+      <svg width={size} height={size} style={{transform:"rotate(-90deg)"}}>
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={bg} strokeWidth={stroke}/>
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+          strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+          style={{transition:"stroke-dashoffset 0.8s cubic-bezier(.4,2,.6,1)"}}/>
+      </svg>
+      <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function MiniBar({value,max,color,h=6}){
+  return(
+    <div style={{background:"rgba(255,255,255,0.08)",borderRadius:99,overflow:"hidden",height:h}}>
+      <div style={{width:`${Math.min((value/Math.max(max,1))*100,100)}%`,height:"100%",background:color,borderRadius:99,transition:"width 0.8s cubic-bezier(.4,2,.6,1)"}}/>
+    </div>
+  );
+}
+
+function Heatmap({dailyReports}){
+  const today=new Date(),cells=[];
+  for(let i=89;i>=0;i--){const d=new Date(today);d.setDate(d.getDate()-i);const key=d.toISOString().slice(0,10),mins=dailyReports[key]?.minutes||0,intensity=Math.min(mins/300,1);cells.push({key,mins,intensity});}
+  return(
+    <div style={{overflowX:"auto",paddingBottom:4}}>
+      <div style={{display:"grid",gridTemplateRows:"repeat(7,14px)",gridAutoFlow:"column",gap:3,width:"max-content"}}>
+        {cells.map(c=>(
+          <div key={c.key} title={`${c.key}: ${fmtMin(c.mins)}`}
+            style={{width:14,height:14,borderRadius:3,background:c.intensity>0?`rgba(56,189,248,${0.15+c.intensity*0.85})`:"rgba(255,255,255,0.05)",cursor:"default"}}/>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LineChart({data,color="#38bdf8",height=80}){
+  if(!data||data.length<2)return<div style={{height,display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(255,255,255,0.3)",fontSize:13}}>Not enough data yet</div>;
+  const max=Math.max(...data.map(d=>d.value),1),w=100/(data.length-1);
+  const pts=data.map((d,i)=>`${i*w},${height-(d.value/max)*(height-8)}`).join(" ");
+  const area=`0,${height} ${pts} ${(data.length-1)*w},${height}`;
+  return(
+    <svg viewBox={`0 0 100 ${height}`} preserveAspectRatio="none" style={{width:"100%",height,display:"block"}}>
+      <defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.3"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs>
+      <polygon points={area} fill="url(#lg)"/>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+// ── Main App ──
+function App(){
+  const [state,setState]=useState(()=>{const s=loadData();return s?{...createInitialState(),...s}:createInitialState();});
+  const [tab,setTab]=useState("dashboard");
+  const [ts,setTs]=useState({running:false,paused:false,elapsed:0,mode:"normal",subject:"Physics",topic:"",notes:"",pomodoroPhase:"work",pomodoroCount:0});
+  const [sf,setSf]=useState({subject:"Physics",topic:"",notes:""});
+  const [tf,setTf]=useState({subject:"Physics",topic:"",priority:"Medium",estimate:30,date:todayKey()});
+  const [showTF,setShowTF]=useState(false);
+  const [lvlUp,setLvlUp]=useState(false);
+  const [toast,setToast]=useState(null);
+  const [quote]=useState(QUOTES[Math.floor(Math.random()*QUOTES.length)]);
+  const timerRef=useRef(null),startRef=useRef(null);
+
+  useEffect(()=>{saveData(state);},[state]);
+
+  useEffect(()=>{
+    setState(prev=>{
+      let ach=[...prev.achievements],xp=prev.xp,changed=false;
+      for(const a of ACH_DEF){if(!ach.includes(a.id)&&a.cond(prev)){ach.push(a.id);xp+=200;changed=true;showT(`🏆 Achievement: ${a.title}!`);}}
+      return changed?{...prev,achievements:ach,xp}:prev;
+    });
+  },[state.sessions.length,state.tasks.filter(t=>t.done).length,state.streak]);
+
+  function showT(msg){setToast(msg);setTimeout(()=>setToast(null),3000);}
+
+  useEffect(()=>{
+    if(ts.running&&!ts.paused){
+      timerRef.current=setInterval(()=>{
+        setTs(t=>{
+          let elapsed=t.elapsed+1;
+          if(t.mode==="pomodoro"){
+            const lim=(t.pomodoroPhase==="work"?(state.settings.pomodoroWork||25):(state.settings.pomodoroBreak||5))*60;
+            if(elapsed>=lim){const np=t.pomodoroPhase==="work"?"break":"work";showT(np==="break"?"☕ Break time!":"💪 Back to work!");return{...t,elapsed:0,pomodoroPhase:np,pomodoroCount:np==="work"?t.pomodoroCount+1:t.pomodoroCount};}
+          }
+          return{...t,elapsed};
+        });
+      },1000);
+    }
+    return()=>clearInterval(timerRef.current);
+  },[ts.running,ts.paused,ts.mode]);
+
+  function startTimer(){
+    startRef.current=new Date().toISOString();
+    setTs(t=>({...t,running:true,paused:false,elapsed:0,subject:sf.subject,topic:sf.topic,notes:sf.notes,pomodoroPhase:"work",pomodoroCount:0}));
+  }
+  function pauseTimer(){setTs(t=>({...t,paused:!t.paused}));}
+  function stopTimer(){
+    clearInterval(timerRef.current);
+    const mins=Math.floor(ts.elapsed/60);
+    if(mins<1){setTs(t=>({...t,running:false,paused:false,elapsed:0}));showT("⚠️ Session too short (< 1 min)");return;}
+    const session={id:Date.now(),start:startRef.current,end:new Date().toISOString(),duration:mins,subject:ts.subject,topic:ts.topic,notes:ts.notes,date:todayKey()};
+    setState(prev=>{
+      const sub={...prev.subjectStats};
+      sub[session.subject]={total:(sub[session.subject]?.total||0)+mins,sessions:[session,...(sub[session.subject]?.sessions||[])]};
+      const today=todayKey(),prevMins=prev.dailyReports[today]?.minutes||0,newMins=prevMins+mins;
+      let newXP=prev.xp+mins*2,bonus=0;
+      if(prevMins<300&&newMins>=300){bonus=150;showT("🎉 5-Hour Target Hit! +150 XP Bonus!");}
+      newXP+=bonus;
+      const yest=new Date();yest.setDate(yest.getDate()-1);const yk=yest.toISOString().slice(0,10);
+      let streak=prev.streak;
+      if(prev.lastStudyDate===yk)streak=streak+1;
+      else if(prev.lastStudyDate===today)streak=streak;
+      else streak=1;
+      const pl=getLvl(prev.xp).idx,nl=getLvl(newXP).idx;
+      if(nl>pl){setLvlUp(true);setTimeout(()=>setLvlUp(false),3000);}
+      showT(`✅ Saved! +${mins*2} XP`);
+      return{...prev,sessions:[session,...prev.sessions],subjectStats:sub,xp:newXP,streak,lastStudyDate:today,
+        dailyReports:{...prev.dailyReports,[today]:{minutes:newMins,sessions:(prev.dailyReports[today]?.sessions||0)+1}}};
+    });
+    setTs({running:false,paused:false,elapsed:0,mode:"normal",subject:"Physics",topic:"",notes:"",pomodoroPhase:"work",pomodoroCount:0});
+  }
+
+  function addTask(){
+    const t={id:Date.now(),...tf,done:false,createdAt:new Date().toISOString()};
+    setState(p=>({...p,tasks:[t,...p.tasks]}));
+    setShowTF(false);setTf({subject:"Physics",topic:"",priority:"Medium",estimate:30,date:todayKey()});
+  }
+  function toggleTask(id){setState(p=>({...p,tasks:p.tasks.map(t=>t.id===id?{...t,done:!t.done}:t)}));}
+  function deleteTask(id){setState(p=>({...p,tasks:p.tasks.filter(t=>t.id!==id)}));}
+
+  // computed
+  const todayMins=state.dailyReports[todayKey()]?.minutes||0;
+  const target=state.settings?.dailyTarget||300;
+  const remaining=Math.max(0,target-todayMins);
+  const lvlInfo=getLvl(state.xp);
+  const todayTasks=state.tasks.filter(t=>t.date===todayKey());
+  const doneTasks=todayTasks.filter(t=>t.done).length;
+  const totalH=Math.floor(totalMins(state)/60);
+  const weekData=Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(6-i));const k=d.toISOString().slice(0,10);const days=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];return{label:days[d.getDay()],value:state.dailyReports[k]?.minutes||0,key:k};});
+  const weekTotal=weekData.reduce((a,d)=>a+d.value,0),weekAvg=Math.round(weekTotal/7);
+  const monthData=Array.from({length:30},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(29-i));const k=d.toISOString().slice(0,10);return{label:d.getDate(),value:state.dailyReports[k]?.minutes||0,key:k};});
+  const monthTotal=monthData.reduce((a,d)=>a+d.value,0);
+  const subTotal=SUBJECTS.reduce((a,s)=>a+(state.subjectStats[s]?.total||0),0);
+
+  const navItems=[
+    {id:"dashboard",icon:"⚡",label:"Dashboard"},
+    {id:"timer",icon:"⏱",label:"Timer"},
+    {id:"tasks",icon:"✅",label:"Tasks"},
+    {id:"analytics",icon:"📊",label:"Analytics"},
+    {id:"subjects",icon:"📚",label:"Subjects"},
+    {id:"rewards",icon:"🏆",label:"Rewards"},
+    {id:"history",icon:"📋",label:"History"},
+  ];
+
+  return(
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#050a14 0%,#0a1628 50%,#050a14 100%)"}}>
+      {/* BG orbs */}
+      <div style={{position:"fixed",inset:0,pointerEvents:"none",overflow:"hidden",zIndex:0}}>
+        <div style={{position:"absolute",top:"-20%",left:"-10%",width:600,height:600,borderRadius:"50%",background:"radial-gradient(circle,rgba(56,189,248,0.06) 0%,transparent 70%)"}}/>
+        <div style={{position:"absolute",bottom:"-20%",right:"-10%",width:500,height:500,borderRadius:"50%",background:"radial-gradient(circle,rgba(167,139,250,0.06) 0%,transparent 70%)"}}/>
+      </div>
+
+      {/* Toast */}
+      {toast&&(
+        <div className="toast-anim" style={{position:"fixed",top:24,right:24,zIndex:9999,background:"rgba(15,23,42,0.97)",backdropFilter:"blur(20px)",border:"1px solid rgba(56,189,248,0.3)",borderRadius:14,padding:"14px 20px",fontSize:14,fontWeight:600,color:"#e2e8f0",boxShadow:"0 8px 32px rgba(0,0,0,0.5)",maxWidth:320}}>
+          {toast}
+        </div>
+      )}
+
+      {/* Level Up overlay */}
+      {lvlUp&&(
+        <div style={{position:"fixed",inset:0,zIndex:9998,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.75)",backdropFilter:"blur(10px)"}}>
+          <div className="level-up" style={{textAlign:"center"}}>
+            <div style={{fontSize:80}}>{lvlInfo.icon}</div>
+            <div style={{fontSize:40,fontWeight:900,background:"linear-gradient(135deg,#38bdf8,#a78bfa)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",marginTop:16}}>LEVEL UP!</div>
+            <div style={{fontSize:22,fontWeight:700,color:"#e2e8f0",marginTop:8}}>{lvlInfo.name}</div>
+          </div>
+        </div>
+      )}
+
+      <div style={{display:"flex",minHeight:"100vh",position:"relative",zIndex:1}}>
+        {/* Sidebar */}
+        <aside className="sidebar glass sidebar" style={{width:220,minHeight:"100vh",padding:"24px 12px",flexDirection:"column",gap:4,borderRadius:0,borderLeft:"none",borderTop:"none",borderBottom:"none",position:"sticky",top:0,height:"100vh",overflowY:"auto"}}>
+          <div style={{padding:"8px 12px 24px"}}>
+            <div style={{fontSize:20,fontWeight:900,background:"linear-gradient(135deg,#38bdf8,#a78bfa)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>JEE⚡CMD</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:2,fontWeight:500}}>Study Command Center</div>
+          </div>
+          {navItems.map(n=>(
+            <button key={n.id} className={`tab-btn${tab===n.id?" active":""}`} onClick={()=>setTab(n.id)} style={{textAlign:"left",display:"flex",alignItems:"center",gap:10,width:"100%"}}>
+              <span>{n.icon}</span><span>{n.label}</span>
+            </button>
+          ))}
+          <div style={{flex:1,minHeight:20}}/>
+          <div className="glass" style={{padding:"14px",borderRadius:14,margin:"0 4px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+              <span style={{fontSize:22}}>{lvlInfo.icon}</span>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:"#e2e8f0"}}>{lvlInfo.name}</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{state.xp.toLocaleString()} XP</div>
+              </div>
+            </div>
+            <MiniBar value={lvlInfo.prog} max={100} color="#a78bfa" h={6}/>
+          </div>
+        </aside>
+
+        {/* Main */}
+        <main className="main-content" style={{flex:1,padding:"24px 20px",maxWidth:"100%",overflow:"hidden"}}>
+          {/* Top bar */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:28,flexWrap:"wrap",gap:12}}>
+            <div>
+              <h1 style={{fontSize:24,fontWeight:800,background:"linear-gradient(135deg,#38bdf8,#a78bfa)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>
+                {navItems.find(n=>n.id===tab)?.icon} {navItems.find(n=>n.id===tab)?.label}
+              </h1>
+              <div style={{fontSize:13,color:"rgba(255,255,255,0.35)",marginTop:2}}>{new Date().toLocaleDateString("en-IN",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <div className="glass" style={{padding:"8px 14px",borderRadius:12,fontSize:13,fontWeight:600,display:"flex",gap:8,alignItems:"center"}}>🔥 {state.streak}d streak</div>
+              <div className="glass" style={{padding:"8px 14px",borderRadius:12,fontSize:13,fontWeight:600,display:"flex",gap:8,alignItems:"center"}}>⭐ {state.xp.toLocaleString()} XP</div>
+            </div>
+          </div>
+
+          {/* ── DASHBOARD ── */}
+          {tab==="dashboard"&&(
+            <div className="animate-in" style={{display:"flex",flexDirection:"column",gap:20}}>
+              <div className="glass-bright" style={{padding:"16px 20px",borderRadius:16,fontSize:14,color:"rgba(255,255,255,0.7)",fontStyle:"italic",lineHeight:1.6}}>"{quote}"</div>
+
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:14}}>
+                {[
+                  {label:"Today",value:fmtMin(todayMins),icon:"📖",sub:`${Math.round((todayMins/target)*100)}% of target`},
+                  {label:"Remaining",value:fmtMin(remaining),icon:"⏳",sub:remaining===0?"🎉 Target done!":"to reach goal"},
+                  {label:"Streak",value:`${state.streak}d`,icon:"🔥",sub:"consecutive days"},
+                  {label:"Total",value:`${totalH}h`,icon:"📈",sub:`${state.sessions.length} sessions`},
+                ].map((s,i)=>(
+                  <div key={i} className="glass" style={{padding:"18px",animation:`fadeIn 0.5s ease ${i*0.1}s both`}}>
+                    <div style={{fontSize:22,marginBottom:6}}>{s.icon}</div>
+                    <div style={{fontSize:24,fontWeight:800,color:"#38bdf8"}}>{s.value}</div>
+                    <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginTop:2}}>{s.label}</div>
+                    <div style={{fontSize:11,color:"rgba(255,255,255,0.25)",marginTop:1}}>{s.sub}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:20,alignItems:"start"}}>
+                <div className="glass" style={{padding:"28px",display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
+                  <CircularProgress value={todayMins} max={target} size={170} stroke={14} color={todayMins>=target?"#34d399":"#38bdf8"}>
+                    <div style={{textAlign:"center"}}>
+                      <div className="timer-num" style={{fontSize:28,fontWeight:800,color:"#e2e8f0"}}>{fmtMin(todayMins)}</div>
+                      <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>of {fmtMin(target)}</div>
+                      {todayMins>=target&&<div style={{fontSize:16,marginTop:4}}>✅</div>}
+                    </div>
+                  </CircularProgress>
+                  <div style={{textAlign:"center"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0"}}>Daily Progress</div>
+                    <div style={{fontSize:12,color:"rgba(255,255,255,0.35)"}}>{Math.round((todayMins/target)*100)}% complete</div>
+                  </div>
+                </div>
+
+                <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                  <div className="glass" style={{padding:"18px"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:12}}>📅 This Week</div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,height:60,alignItems:"end"}}>
+                      {weekData.map(d=>{const pct=Math.min((d.value/target)*100,100);return(
+                        <div key={d.key} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                          <div style={{width:"100%",borderRadius:"3px 3px 0 0",background:pct>=100?"#34d399":pct>0?"rgba(56,189,248,0.6)":"rgba(255,255,255,0.05)",height:`${Math.max(pct,4)}%`,minHeight:3,transition:"height 0.8s cubic-bezier(.4,2,.6,1)"}}/>
+                          <div style={{fontSize:9,color:"rgba(255,255,255,0.35)"}}>{d.label}</div>
+                        </div>
+                      );})}
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",marginTop:8,fontSize:12}}>
+                      <span style={{color:"rgba(255,255,255,0.4)"}}>Total: {fmtMin(weekTotal)}</span>
+                      <span style={{color:"rgba(255,255,255,0.4)"}}>Avg: {fmtMin(weekAvg)}/day</span>
+                    </div>
+                  </div>
+                  <div className="glass" style={{padding:"18px"}}>
+                    <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:12}}>📚 Subjects Today</div>
+                    {SUBJECTS.map(s=>{
+                      const sm=(state.subjectStats[s]?.sessions||[]).filter(ss=>ss.date===todayKey()).reduce((a,ss)=>a+ss.duration,0);
+                      return(<div key={s} style={{marginBottom:8}}>
+                        <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                          <span style={{color:SCOL[s],fontWeight:600}}>{s}</span>
+                          <span style={{color:"rgba(255,255,255,0.4)"}}>{fmtMin(sm)}</span>
+                        </div>
+                        <MiniBar value={sm} max={Math.max(todayMins,1)} color={SCOL[s]} h={5}/>
+                      </div>);
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="glass" style={{padding:"20px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0"}}>✅ Today's Tasks ({doneTasks}/{todayTasks.length})</div>
+                  <button className="btn btn-ghost" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setTab("tasks")}>View All</button>
+                </div>
+                {todayTasks.length===0?(
+                  <div style={{textAlign:"center",color:"rgba(255,255,255,0.3)",fontSize:13,padding:"16px 0"}}>No tasks for today. Add some!</div>
+                ):todayTasks.slice(0,4).map(t=>(
+                  <div key={t.id} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                    <div onClick={()=>toggleTask(t.id)} style={{width:18,height:18,borderRadius:6,border:`2px solid ${t.done?"#34d399":"rgba(255,255,255,0.2)"}`,background:t.done?"#34d399":"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.2s"}}>
+                      {t.done&&<span style={{color:"#fff",fontSize:10}}>✓</span>}
+                    </div>
+                    <span style={{fontSize:13,color:t.done?"rgba(255,255,255,0.3)":"#e2e8f0",textDecoration:t.done?"line-through":"none",flex:1}}>{t.topic||"Task"}</span>
+                    <span style={{fontSize:11,padding:"2px 8px",borderRadius:6,background:SCOL[t.subject]+"22",color:SCOL[t.subject]}}>{t.subject}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── TIMER ── */}
+          {tab==="timer"&&(
+            <div className="animate-in" style={{display:"flex",flexDirection:"column",gap:20,maxWidth:680,margin:"0 auto"}}>
+              <div className="glass" style={{padding:"6px",display:"flex",gap:4,borderRadius:16}}>
+                {["normal","pomodoro","deep"].map(m=>(
+                  <button key={m} className={`tab-btn${ts.mode===m?" active":""}`} style={{flex:1}} onClick={()=>!ts.running&&setTs(t=>({...t,mode:m}))}>
+                    {m==="normal"?"🎯 Custom":m==="pomodoro"?"🍅 Pomodoro":"🧠 Deep Work"}
+                  </button>
+                ))}
+              </div>
+
+              <div className="glass" style={{padding:"40px 28px",textAlign:"center"}}>
+                {ts.mode==="pomodoro"&&ts.running&&(
+                  <div style={{marginBottom:12,fontSize:13,color:ts.pomodoroPhase==="work"?"#38bdf8":"#34d399",fontWeight:600}}>
+                    {ts.pomodoroPhase==="work"?"🎯 Focus Time":"☕ Break Time"} — Session #{ts.pomodoroCount+1}
+                  </div>
+                )}
+                <div className={`timer-num${ts.running&&!ts.paused?" pulse":""}`} style={{fontSize:68,fontWeight:800,color:ts.running?(ts.paused?"#fb923c":"#38bdf8"):"#e2e8f0",lineHeight:1,letterSpacing:-2,textShadow:ts.running?"0 0 40px rgba(56,189,248,0.3)":"none",transition:"color 0.3s"}}>
+                  {ts.mode==="pomodoro"&&ts.running?(()=>{const lim=(ts.pomodoroPhase==="work"?(state.settings.pomodoroWork||25):(state.settings.pomodoroBreak||5))*60;return fmtTime(lim-(ts.elapsed%lim));})():fmtTime(ts.elapsed)}
+                </div>
+                {ts.running&&<div style={{fontSize:13,color:"rgba(255,255,255,0.4)",marginTop:8}}>{ts.subject}{ts.topic?` · ${ts.topic}`:""}</div>}
+
+                {!ts.running&&(
+                  <div style={{marginTop:28,display:"flex",flexDirection:"column",gap:12,textAlign:"left"}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                      <div>
+                        <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:6}}>Subject</div>
+                        <select className="input" value={sf.subject} onChange={e=>setSf(f=>({...f,subject:e.target.value}))}>
+                          {SUBJECTS.map(s=><option key={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:6}}>Topic</div>
+                        <input className="input" placeholder="e.g. Kinematics" value={sf.topic} onChange={e=>setSf(f=>({...f,topic:e.target.value}))}/>
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:6}}>Notes</div>
+                      <textarea className="input" rows={2} placeholder="What will you study?" value={sf.notes} onChange={e=>setSf(f=>({...f,notes:e.target.value}))} style={{resize:"none"}}/>
+                    </div>
+                    {ts.mode==="pomodoro"&&(
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                        <div>
+                          <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:6}}>Work (min)</div>
+                          <input className="input" type="number" min={5} max={90} value={state.settings.pomodoroWork||25} onChange={e=>setState(s=>({...s,settings:{...s.settings,pomodoroWork:+e.target.value}}))}/>
+                        </div>
+                        <div>
+                          <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:6}}>Break (min)</div>
+                          <input className="input" type="number" min={1} max={30} value={state.settings.pomodoroBreak||5} onChange={e=>setState(s=>({...s,settings:{...s.settings,pomodoroBreak:+e.target.value}}))}/>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div style={{display:"flex",gap:12,justifyContent:"center",marginTop:28,flexWrap:"wrap"}}>
+                  {!ts.running?(
+                    <button className="btn btn-primary" style={{fontSize:16,padding:"14px 40px"}} onClick={startTimer}>▶ Start Session</button>
+                  ):(
+                    <>
+                      <button className="btn btn-ghost" onClick={pauseTimer}>{ts.paused?"▶ Resume":"⏸ Pause"}</button>
+                      <button className="btn btn-danger" onClick={stopTimer}>⏹ Stop & Save</button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="glass" style={{padding:"20px"}}>
+                <div style={{fontSize:13,fontWeight:700,marginBottom:14}}>⚙️ Settings</div>
+                <div style={{display:"flex",alignItems:"center",gap:16}}>
+                  <span style={{fontSize:13,color:"rgba(255,255,255,0.5)",flex:1}}>Daily Target (minutes)</span>
+                  <input className="input" type="number" min={60} max={720} style={{width:90}} value={state.settings.dailyTarget||300} onChange={e=>setState(s=>({...s,settings:{...s.settings,dailyTarget:+e.target.value}}))}/>
+                </div>
+              </div>
+
+              <div className="glass" style={{padding:"20px"}}>
+                <div style={{fontSize:13,fontWeight:700,marginBottom:14}}>📋 Recent Sessions</div>
+                {state.sessions.length===0?(
+                  <div style={{textAlign:"center",color:"rgba(255,255,255,0.3)",fontSize:13,padding:"20px 0"}}>No sessions yet. Start studying!</div>
+                ):state.sessions.slice(0,5).map(s=>(
+                  <div key={s.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                    <div style={{width:8,height:8,borderRadius:"50%",background:SCOL[s.subject],flexShrink:0}}/>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,fontWeight:600}}>{s.subject}{s.topic?` · ${s.topic}`:""}</div>
+                      <div style={{fontSize:11,color:"rgba(255,255,255,0.3)"}}>{new Date(s.start).toLocaleString("en-IN",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</div>
+                    </div>
+                    <div style={{fontSize:13,fontWeight:700,color:"#38bdf8"}}>{fmtMin(s.duration)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── TASKS ── */}
+          {tab==="tasks"&&(
+            <div className="animate-in" style={{display:"flex",flexDirection:"column",gap:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+                <div style={{fontSize:13,color:"rgba(255,255,255,0.4)"}}>{state.tasks.filter(t=>t.done).length}/{state.tasks.length} completed</div>
+                <button className="btn btn-primary" onClick={()=>setShowTF(true)}>+ Add Task</button>
+              </div>
+              {showTF&&(
+                <div className="glass-bright" style={{padding:"20px"}}>
+                  <div style={{fontSize:13,fontWeight:700,marginBottom:14}}>📝 New Task</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
+                    {[
+                      {label:"Subject",el:<select className="input" value={tf.subject} onChange={e=>setTf(f=>({...f,subject:e.target.value}))}>{SUBJECTS.map(s=><option key={s}>{s}</option>)}</select>},
+                      {label:"Topic / Task",el:<input className="input" placeholder="e.g. Solve 20 problems" value={tf.topic} onChange={e=>setTf(f=>({...f,topic:e.target.value}))}/>},
+                      {label:"Priority",el:<select className="input" value={tf.priority} onChange={e=>setTf(f=>({...f,priority:e.target.value}))}>{["High","Medium","Low"].map(p=><option key={p}>{p}</option>)}</select>},
+                      {label:"Date",el:<input className="input" type="date" value={tf.date} onChange={e=>setTf(f=>({...f,date:e.target.value}))}/>},
+                      {label:"Estimate (min)",el:<input className="input" type="number" min={5} value={tf.estimate} onChange={e=>setTf(f=>({...f,estimate:+e.target.value}))}/>},
+                    ].map(({label,el})=>(
+                      <div key={label}><div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginBottom:6}}>{label}</div>{el}</div>
+                    ))}
+                  </div>
+                  <div style={{display:"flex",gap:10}}>
+                    <button className="btn btn-primary" onClick={addTask}>Add Task</button>
+                    <button className="btn btn-ghost" onClick={()=>setShowTF(false)}>Cancel</button>
+                  </div>
+                </div>
+              )}
+              {(()=>{
+                const grouped={};
+                state.tasks.forEach(t=>{grouped[t.date]=[...(grouped[t.date]||[]),t];});
+                const sorted=Object.keys(grouped).sort();
+                if(sorted.length===0)return(
+                  <div className="glass" style={{padding:"50px",textAlign:"center"}}>
+                    <div style={{fontSize:40,marginBottom:12}}>📋</div>
+                    <div style={{color:"rgba(255,255,255,0.3)"}}>No tasks yet. Add your first task!</div>
+                  </div>
+                );
+                return sorted.map(date=>(
+                  <div key={date} className="glass" style={{padding:"16px 20px"}}>
+                    <div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.4)",marginBottom:10,textTransform:"uppercase",letterSpacing:1}}>
+                      {date===todayKey()?"📅 TODAY":new Date(date+"T12:00:00").toLocaleDateString("en-IN",{weekday:"short",month:"short",day:"numeric"})}
+                    </div>
+                    {grouped[date].sort((a,b)=>{const p={High:0,Medium:1,Low:2};return p[a.priority]-p[b.priority];}).map(t=>(
+                      <div key={t.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                        <div onClick={()=>toggleTask(t.id)} style={{width:20,height:20,borderRadius:6,border:`2px solid ${t.done?"#34d399":"rgba(255,255,255,0.2)"}`,background:t.done?"#34d399":"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.2s"}}>
+                          {t.done&&<span style={{color:"#fff",fontSize:11}}>✓</span>}
+                        </div>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:14,color:t.done?"rgba(255,255,255,0.3)":"#e2e8f0",textDecoration:t.done?"line-through":"none",fontWeight:500}}>{t.topic||"Task"}</div>
+                          <div style={{display:"flex",gap:8,marginTop:4,flexWrap:"wrap"}}>
+                            <span style={{fontSize:11,padding:"2px 8px",borderRadius:6,background:SCOL[t.subject]+"22",color:SCOL[t.subject]}}>{t.subject}</span>
+                            <span style={{fontSize:11,padding:"2px 8px",borderRadius:6,background:t.priority==="High"?"rgba(239,68,68,0.15)":t.priority==="Medium"?"rgba(251,191,36,0.15)":"rgba(148,163,184,0.15)",color:t.priority==="High"?"#f87171":t.priority==="Medium"?"#fbbf24":"#94a3b8"}}>{t.priority}</span>
+                            <span style={{fontSize:11,color:"rgba(255,255,255,0.3)"}}>⏱ {fmtMin(t.estimate)}</span>
+                          </div>
+                        </div>
+                        <button className="btn btn-danger" style={{padding:"4px 8px",fontSize:11,borderRadius:8}} onClick={()=>deleteTask(t.id)}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                ));
+              })()}
+            </div>
+          )}
+
+          {/* ── ANALYTICS ── */}
+          {tab==="analytics"&&(
+            <div className="animate-in" style={{display:"flex",flexDirection:"column",gap:20}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:14}}>
+                {[
+                  {label:"Total Hours",value:`${totalH}h`,icon:"⏱",color:"#38bdf8"},
+                  {label:"This Week",value:fmtMin(weekTotal),icon:"📅",color:"#a78bfa"},
+                  {label:"This Month",value:fmtMin(monthTotal),icon:"📆",color:"#34d399"},
+                  {label:"Best Streak",value:`${state.streak}d`,icon:"🔥",color:"#fb923c"},
+                ].map((s,i)=>(
+                  <div key={i} className="glass" style={{padding:"18px",animation:`fadeIn 0.5s ease ${i*0.1}s both`}}>
+                    <div style={{fontSize:22,marginBottom:6}}>{s.icon}</div>
+                    <div style={{fontSize:24,fontWeight:800,color:s.color}}>{s.value}</div>
+                    <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",marginTop:2}}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="glass" style={{padding:"20px"}}>
+                <div style={{fontSize:13,fontWeight:700,marginBottom:14}}>🗓 Activity Heatmap (Last 90 Days)</div>
+                <Heatmap dailyReports={state.dailyReports}/>
+                <div style={{display:"flex",gap:6,alignItems:"center",marginTop:10,fontSize:11,color:"rgba(255,255,255,0.3)"}}>
+                  <span>Less</span>
+                  {[0.15,0.35,0.6,1].map(o=><div key={o} style={{width:12,height:12,borderRadius:3,background:`rgba(56,189,248,${o})`}}/>)}
+                  <span>More</span>
+                </div>
+              </div>
+
+              <div className="glass" style={{padding:"20px"}}>
+                <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>📈 Weekly Trend</div>
+                <div style={{fontSize:12,color:"rgba(255,255,255,0.3)",marginBottom:12}}>Study minutes over last 7 days</div>
+                <LineChart data={weekData.map(d=>({label:d.label,value:d.value}))}/>
+                <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
+                  {weekData.map(d=><div key={d.key} style={{fontSize:10,color:"rgba(255,255,255,0.3)",textAlign:"center"}}>{d.label}</div>)}
+                </div>
+              </div>
+
+              <div className="glass" style={{padding:"20px"}}>
+                <div style={{fontSize:13,fontWeight:700,marginBottom:14}}>📊 Monthly Overview (30 Days)</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(30,1fr)",gap:2,height:80,alignItems:"end"}}>
+                  {monthData.map(d=>{const pct=Math.min((d.value/target)*100,100);return(
+                    <div key={d.key} title={`${d.key}: ${fmtMin(d.value)}`} style={{borderRadius:"2px 2px 0 0",background:pct>=100?"#34d399":pct>0?"rgba(56,189,248,0.5)":"rgba(255,255,255,0.04)",height:`${Math.max(pct,4)}%`,minHeight:2,transition:"height 0.6s ease",cursor:"default"}}/>
+                  );})}
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",marginTop:8,fontSize:11,color:"rgba(255,255,255,0.3)"}}>
+                  <span>30 days ago</span><span>Today</span>
+                </div>
+              </div>
+
+              <div className="glass" style={{padding:"20px"}}>
+                <div style={{fontSize:13,fontWeight:700,marginBottom:14}}>🎯 Subject Distribution</div>
+                {SUBJECTS.map(s=>{const hrs=state.subjectStats[s]?.total||0;return(
+                  <div key={s} style={{marginBottom:14}}>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:6}}>
+                      <span style={{fontWeight:600,color:SCOL[s]}}>{s}</span>
+                      <span style={{color:"rgba(255,255,255,0.5)"}}>{fmtMin(hrs)} ({subTotal>0?Math.round((hrs/subTotal)*100):0}%)</span>
+                    </div>
+                    <MiniBar value={hrs} max={Math.max(subTotal,1)} color={SCOL[s]} h={8}/>
+                  </div>
+                );})}
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+                <div className="glass" style={{padding:"20px"}}>
+                  <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>📋 Daily Report</div>
+                  {[
+                    {label:"Study Hours",value:fmtMin(todayMins)},
+                    {label:"Target %",value:`${Math.round((todayMins/target)*100)}%`},
+                    {label:"Tasks Done",value:`${doneTasks}/${todayTasks.length}`},
+                    {label:"Sessions",value:state.dailyReports[todayKey()]?.sessions||0},
+                  ].map(r=>(
+                    <div key={r.label} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.05)",fontSize:13}}>
+                      <span style={{color:"rgba(255,255,255,0.4)"}}>{r.label}</span>
+                      <span style={{fontWeight:700,color:"#38bdf8"}}>{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="glass" style={{padding:"20px"}}>
+                  <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>📅 Weekly Report</div>
+                  {[
+                    {label:"Total",value:fmtMin(weekTotal)},
+                    {label:"Daily Avg",value:fmtMin(weekAvg)},
+                    {label:"Target Days",value:`${weekData.filter(d=>d.value>=target).length}/7`},
+                    {label:"Streak",value:`${state.streak}d`},
+                  ].map(r=>(
+                    <div key={r.label} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.05)",fontSize:13}}>
+                      <span style={{color:"rgba(255,255,255,0.4)"}}>{r.label}</span>
+                      <span style={{fontWeight:700,color:"#a78bfa"}}>{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── SUBJECTS ── */}
+          {tab==="subjects"&&(
+            <div className="animate-in" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:20}}>
+              {SUBJECTS.map((s,i)=>{
+                const stat=state.subjectStats[s]||{total:0,sessions:[]};
+                const todayS=(stat.sessions||[]).filter(ss=>ss.date===todayKey()).reduce((a,ss)=>a+ss.duration,0);
+                const weekS=(stat.sessions||[]).filter(ss=>weekData.some(w=>w.key===ss.date)).reduce((a,ss)=>a+ss.duration,0);
+                return(
+                  <div key={s} className="glass" style={{padding:"24px",animation:`fadeIn 0.5s ease ${i*0.1}s both`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+                      <div style={{width:42,height:42,borderRadius:12,background:SCOL[s]+"22",border:`1.5px solid ${SCOL[s]}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>
+                        {s==="Physics"?"⚛️":s==="Chemistry"?"🧪":s==="Mathematics"?"∑":"📖"}
+                      </div>
+                      <div>
+                        <div style={{fontSize:16,fontWeight:800,color:SCOL[s]}}>{s}</div>
+                        <div style={{fontSize:12,color:"rgba(255,255,255,0.3)"}}>{(stat.sessions||[]).length} sessions</div>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"center",marginBottom:16}}>
+                      <CircularProgress value={stat.total} max={Math.max(stat.total,120)} size={120} stroke={10} color={SCOL[s]} bg="rgba(255,255,255,0.06)">
+                        <div style={{textAlign:"center"}}>
+                          <div className="timer-num" style={{fontSize:20,fontWeight:800,color:"#e2e8f0"}}>{Math.floor(stat.total/60)}h</div>
+                          <div style={{fontSize:10,color:"rgba(255,255,255,0.35)"}}>total</div>
+                        </div>
+                      </CircularProgress>
+                    </div>
+                    {[{label:"Today",value:fmtMin(todayS)},{label:"This Week",value:fmtMin(weekS)},{label:"Total",value:fmtMin(stat.total)}].map(r=>(
+                      <div key={r.label} style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:6}}>
+                        <span style={{color:"rgba(255,255,255,0.35)"}}>{r.label}</span>
+                        <span style={{fontWeight:700,color:SCOL[s]}}>{r.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── REWARDS ── */}
+          {tab==="rewards"&&(
+            <div className="animate-in" style={{display:"flex",flexDirection:"column",gap:20}}>
+              <div className="glass-bright" style={{padding:"32px",textAlign:"center"}}>
+                <div style={{fontSize:64,marginBottom:12}}>{lvlInfo.icon}</div>
+                <div style={{fontSize:28,fontWeight:900,background:"linear-gradient(135deg,#38bdf8,#a78bfa)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>{lvlInfo.name}</div>
+                <div style={{fontSize:14,color:"rgba(255,255,255,0.4)",marginTop:4}}>{state.xp.toLocaleString()} XP</div>
+                <div style={{maxWidth:300,margin:"20px auto 0"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"rgba(255,255,255,0.3)",marginBottom:8}}>
+                    <span>{lvlInfo.name}</span><span>{lvlInfo.next?lvlInfo.next.name:"Max Level"}</span>
+                  </div>
+                  <MiniBar value={lvlInfo.prog} max={100} color="#a78bfa" h={10}/>
+                  {lvlInfo.next&&<div style={{fontSize:12,color:"rgba(255,255,255,0.3)",marginTop:6,textAlign:"center"}}>{(lvlInfo.next.min-state.xp).toLocaleString()} XP to next level</div>}
+                </div>
+              </div>
+
+              <div className="glass" style={{padding:"20px"}}>
+                <div style={{fontSize:13,fontWeight:700,marginBottom:14}}>⚔️ All Levels</div>
+                {LEVELS.map(l=>{const unlocked=state.xp>=l.min,isCurrent=getLvl(state.xp).name===l.name;return(
+                  <div key={l.name} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",borderRadius:12,background:isCurrent?"rgba(56,189,248,0.12)":"rgba(255,255,255,0.03)",border:`1px solid ${isCurrent?"rgba(56,189,248,0.3)":"rgba(255,255,255,0.05)"}`,opacity:unlocked?1:0.4,marginBottom:8}}>
+                    <span style={{fontSize:24}}>{l.icon}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:14,fontWeight:700,color:isCurrent?"#38bdf8":"#e2e8f0"}}>{l.name}</div>
+                      <div style={{fontSize:12,color:"rgba(255,255,255,0.3)"}}>Required: {l.min.toLocaleString()} XP</div>
+                    </div>
+                    {unlocked&&<span style={{fontSize:18}}>✅</span>}
+                    {isCurrent&&<span style={{fontSize:12,color:"#38bdf8",fontWeight:700}}>CURRENT</span>}
+                  </div>
+                );})}
+              </div>
+
+              <div className="glass" style={{padding:"20px"}}>
+                <div style={{fontSize:13,fontWeight:700,marginBottom:14}}>💰 How to Earn XP</div>
+                {[
+                  {label:"Per minute studied",value:"+2 XP"},
+                  {label:"Complete 5-hour daily target",value:"+150 XP"},
+                  {label:"Unlock achievement",value:"+200 XP"},
+                ].map(r=>(
+                  <div key={r.label} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)",fontSize:13}}>
+                    <span style={{color:"rgba(255,255,255,0.5)"}}>{r.label}</span>
+                    <span style={{fontWeight:700,color:"#34d399"}}>{r.value}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="glass" style={{padding:"20px"}}>
+                <div style={{fontSize:13,fontWeight:700,marginBottom:14}}>🏆 Achievements</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:12}}>
+                  {ACH_DEF.map(a=>{const unlocked=state.achievements.includes(a.id);return(
+                    <div key={a.id} style={{padding:"16px",borderRadius:14,background:unlocked?"rgba(56,189,248,0.1)":"rgba(255,255,255,0.03)",border:`1px solid ${unlocked?"rgba(56,189,248,0.3)":"rgba(255,255,255,0.06)"}`,opacity:unlocked?1:0.45,transition:"all 0.3s"}}>
+                      <div style={{fontSize:30,marginBottom:8}}>{unlocked?a.icon:"🔒"}</div>
+                      <div style={{fontSize:13,fontWeight:700,color:unlocked?"#38bdf8":"#e2e8f0"}}>{a.title}</div>
+                      <div style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginTop:4}}>{a.desc}</div>
+                      {unlocked&&<div style={{fontSize:11,color:"#34d399",marginTop:6}}>✅ Unlocked</div>}
+                    </div>
+                  );})}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── HISTORY ── */}
+          {tab==="history"&&(
+            <div className="animate-in" style={{display:"flex",flexDirection:"column",gap:16}}>
+              <div style={{fontSize:13,color:"rgba(255,255,255,0.4)"}}>{state.sessions.length} total sessions · {totalH}h studied</div>
+              {state.sessions.length===0?(
+                <div className="glass" style={{padding:"60px",textAlign:"center"}}>
+                  <div style={{fontSize:48,marginBottom:12}}>📋</div>
+                  <div style={{color:"rgba(255,255,255,0.3)"}}>No sessions yet. Start the timer!</div>
+                </div>
+              ):state.sessions.map(s=>(
+                <div key={s.id} className="glass" style={{padding:"16px 20px",display:"flex",alignItems:"flex-start",gap:14}}>
+                  <div style={{width:10,height:10,borderRadius:"50%",background:SCOL[s.subject],marginTop:5,flexShrink:0}}/>
+                  <div style={{flex:1}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+                      <div>
+                        <div style={{fontSize:15,fontWeight:700,color:"#e2e8f0"}}>{s.subject}{s.topic?` · ${s.topic}`:""}</div>
+                        <div style={{fontSize:12,color:"rgba(255,255,255,0.35)",marginTop:3}}>{new Date(s.start).toLocaleString("en-IN",{weekday:"short",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</div>
+                        {s.notes&&<div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginTop:6,fontStyle:"italic"}}>"{s.notes}"</div>}
+                      </div>
+                      <div style={{textAlign:"right"}}>
+                        <div className="timer-num" style={{fontSize:18,fontWeight:800,color:SCOL[s.subject]}}>{fmtMin(s.duration)}</div>
+                        <div style={{fontSize:11,color:"rgba(255,255,255,0.3)"}}>+{s.duration*2} XP</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* Mobile bottom nav */}
+      <nav className="mobile-nav" style={{position:"fixed",bottom:0,left:0,right:0,background:"rgba(5,10,20,0.97)",backdropFilter:"blur(20px)",borderTop:"1px solid rgba(255,255,255,0.08)",justifyContent:"space-around",padding:"10px 2px 16px",zIndex:100}}>
+        {navItems.map(n=>(
+          <button key={n.id} onClick={()=>setTab(n.id)} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"4px 6px",borderRadius:10,color:tab===n.id?"#38bdf8":"rgba(255,255,255,0.35)",transition:"all 0.2s",fontFamily:"Outfit,sans-serif"}}>
+            <span style={{fontSize:18}}>{n.icon}</span>
+            <span style={{fontSize:9,fontWeight:600}}>{n.label}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
